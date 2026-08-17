@@ -304,6 +304,76 @@ app.post("/session", requirePrototypeToken, async (req, res) => {
 });
 
 // ===============================
+// QWEN REALTIME SESSION
+// ===============================
+app.post("/qwen/realtime/session", requirePrototypeToken, async (req, res) => {
+  try {
+    if (
+      !process.env.DASHSCOPE_API_KEY ||
+      !process.env.DASHSCOPE_WORKSPACE_ID
+    ) {
+      console.error("Missing Qwen configuration.");
+      return res.status(500).json({
+        error: "Server configuration error."
+      });
+    }
+
+    console.log("QWEN SESSION START:", {
+      device: req.prototypeDevice.deviceId,
+      partner: req.prototypeDevice.partner,
+      time: new Date().toISOString()
+    });
+
+    const response = await fetch(
+      `https://${process.env.DASHSCOPE_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/api/v1/tokens?expire_in_seconds=300`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`
+        }
+      }
+    );
+
+    const text = await response.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.error("QWEN SESSION PARSE ERROR.");
+      return res.status(502).json({
+        error: "Invalid DashScope token response."
+      });
+    }
+
+    if (!response.ok) {
+      console.error("QWEN SESSION DASHSCOPE ERROR:", {
+        status: response.status,
+        code: data.code,
+        request_id: data.request_id
+      });
+      return res.status(response.status).json(data);
+    }
+
+    if (!data.token || !data.expires_at) {
+      return res.status(502).json({
+        error: "Invalid DashScope token response."
+      });
+    }
+
+    return res.json({
+      url: `wss://${process.env.DASHSCOPE_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/realtime`,
+      token: data.token,
+      model: "qwen3.5-omni-flash-realtime",
+      expires_at: data.expires_at
+    });
+  } catch (err) {
+    console.error("QWEN SESSION ERROR:", err);
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+// ===============================
 // SPEECH NORMALIZATION
 // ===============================
 
