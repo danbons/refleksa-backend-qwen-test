@@ -364,7 +364,7 @@ app.post("/qwen/realtime/session", requirePrototypeToken, async (req, res) => {
     return res.json({
       url: `wss://${process.env.DASHSCOPE_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/realtime`,
       token: data.token,
-      model: "qwen3.5-omni-flash-realtime",
+      model: "qwen3.5-omni-plus-realtime",
       expires_at: data.expires_at
     });
   } catch (err) {
