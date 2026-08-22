@@ -3355,6 +3355,14 @@ app.get(
         new Map();
 
 
+      const slotCandidates =
+        [];
+
+
+      const slotCutoffUtcMilliseconds =
+        Date.now();
+
+
       for (
         const item of
           Array.isArray(data.list)
@@ -3389,6 +3397,109 @@ app.get(
               0,
               10
             );
+
+
+        if (
+          timestamp * 1000 >
+          slotCutoffUtcMilliseconds
+        ) {
+
+          const weather =
+            item.weather?.[0];
+
+
+          slotCandidates.push({
+            timestamp,
+
+            slot: {
+              forecast_at_utc:
+                new Date(
+                  timestamp * 1000
+                ).toISOString(),
+
+              local_date:
+                dateKey,
+
+              local_time:
+                localDate
+                  .toISOString()
+                  .slice(
+                    11,
+                    16
+                  ),
+
+              temperature_celsius:
+                typeof item.main?.temp ===
+                  "number" &&
+                Number.isFinite(
+                  item.main.temp
+                )
+                  ? item.main.temp
+                  : null,
+
+              condition:
+                typeof weather?.description ===
+                  "string" &&
+                weather.description.trim()
+                  ? weather.description
+                  : null,
+
+              precipitation_probability:
+                typeof item.pop ===
+                  "number" &&
+                Number.isFinite(
+                  item.pop
+                )
+                  ? item.pop
+                  : null,
+
+              rain_3h_mm:
+                typeof item.rain?.["3h"] ===
+                  "number" &&
+                Number.isFinite(
+                  item.rain["3h"]
+                )
+                  ? item.rain["3h"]
+                  : null,
+
+              snow_3h_mm:
+                typeof item.snow?.["3h"] ===
+                  "number" &&
+                Number.isFinite(
+                  item.snow["3h"]
+                )
+                  ? item.snow["3h"]
+                  : null,
+
+              weather_id:
+                typeof weather?.id ===
+                  "number" &&
+                Number.isFinite(
+                  weather.id
+                )
+                  ? weather.id
+                  : null,
+
+              wind_speed_mps:
+                typeof item.wind?.speed ===
+                  "number" &&
+                Number.isFinite(
+                  item.wind.speed
+                )
+                  ? item.wind.speed
+                  : null,
+
+              humidity_percent:
+                typeof item.main?.humidity ===
+                  "number" &&
+                Number.isFinite(
+                  item.main.humidity
+                )
+                  ? item.main.humidity
+                  : null
+            }
+          });
+        }
 
 
         /*
@@ -3497,6 +3608,19 @@ app.get(
             )
         });
       }
+
+
+      const slots =
+        slotCandidates
+          .sort(
+            (a, b) =>
+              a.timestamp -
+              b.timestamp
+          )
+          .map(
+            candidate =>
+              candidate.slot
+          );
 
 
       const forecast =
@@ -3635,6 +3759,25 @@ app.get(
           Number(
             data.city?.coord?.lon
           ),
+
+        interval_hours:
+          3,
+
+        available_from:
+          slots[0]
+            ?.forecast_at_utc ||
+          null,
+
+        available_to:
+          slots[
+            slots.length - 1
+          ]?.forecast_at_utc ||
+          null,
+
+        timezone_offset_seconds:
+          timezoneOffsetSeconds,
+
+        slots,
 
         forecast,
 
