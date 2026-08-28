@@ -2404,20 +2404,25 @@ app.post("/vision/knowledge", requirePrototypeToken, async (req, res) => {
       ? image_base64
       : `data:image/jpeg;base64,${image_base64}`;
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const qwenKnowledgeVisionModel =
+      process.env.QWEN_KNOWLEDGE_VISION_MODEL ||
+      process.env.QWEN_VISION_MODEL ||
+      "qwen3.7-plus-2026-05-26";
+
+    const response = await fetch(
+      `https://${process.env.DASHSCOPE_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions`,
+      {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini",
-        input: [
+        model: qwenKnowledgeVisionModel,
+        messages: [
           {
             role: "system",
-            content: [{
-              type: "input_text",
-              text: `
+            content: `
 You are Refleksa's Vision Knowledge Engine.
 
 Analyze the image and extract ONLY useful object-location knowledge.
@@ -2461,46 +2466,69 @@ JSON shape:
   "items": []
 }
 `.trim()
-            }]
           },
           {
             role: "user",
             content: [
               {
-                type: "input_text",
+                type: "text",
                 text: `Recognized person: ${recognizedPerson || "unknown"}`
               },
               {
-                type: "input_image",
-                image_url: dataUrl,
-                detail: "low"
+                type: "image_url",
+                image_url: {
+                  url: dataUrl
+                }
               }
             ]
           }
         ],
-        max_output_tokens: 300
+        max_tokens: 300,
+        response_format: {
+          type: "json_object"
+        },
+        enable_thinking: false
       })
-    });
+      }
+    );
 
     const raw = await response.text();
-    const data = JSON.parse(raw);
+    let data;
+
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      console.error("VISION KNOWLEDGE QWEN PARSE ERROR:", {
+        status: response.status
+      });
+      return res.json({ items: [] });
+    }
 
     if (!response.ok) {
-      console.error("VISION KNOWLEDGE ERROR:", data);
-      return res.status(response.status).json(data);
+      console.error("VISION KNOWLEDGE QWEN ERROR:", {
+        status: response.status,
+        requestId:
+          response.headers.get("x-request-id") ||
+          data?.request_id ||
+          null
+      });
+      return res.status(response.status).json({ items: [] });
     }
 
     const output =
-      data.output_text ||
-      data.output?.flatMap(item => item.content || [])
-        ?.find(part => part.type === "output_text")
-        ?.text ||
+      data.choices?.[0]?.message?.content ||
       '{"items":[]}';
 
     let parsed;
     try {
       parsed = JSON.parse(output);
     } catch {
+      console.error("VISION KNOWLEDGE QWEN RESULT JSON ERROR:", {
+        requestId:
+          response.headers.get("x-request-id") ||
+          data?.request_id ||
+          null
+      });
       parsed = { items: [] };
     }
 
