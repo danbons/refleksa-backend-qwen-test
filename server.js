@@ -7745,22 +7745,25 @@ app.post("/memory/consolidate", requirePrototypeToken, async (req, res) => {
       return res.json({ consolidated: [] });
     }
 
+    const qwenMemoryModel =
+      process.env.QWEN_MEMORY_MODEL ||
+      process.env.QWEN_TEXT_MODEL ||
+      "qwen3.6-plus-2026-04-02";
+
     const response = await fetch(
-      "https://api.openai.com/v1/responses",
+      `https://${process.env.DASHSCOPE_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: process.env.OPENAI_MEMORY_MODEL || "gpt-4.1-mini",
-          input: [
+          model: qwenMemoryModel,
+          messages: [
             {
               role: "system",
-              content: [{
-                type: "input_text",
-                text: `
+              content: `
 You are Refleksa's Memory Consolidation Engine.
 
 Merge related memories into richer human memories.
@@ -7808,17 +7811,17 @@ The input memories are already filtered and considered meaningful. Your task is 
 
 Return ONLY valid JSON.
                 `.trim()
-              }]
             },
             {
               role: "user",
-              content: [{
-                type: "input_text",
-                text: JSON.stringify(memories)
-              }]
+              content: JSON.stringify(memories)
             }
           ],
-          max_output_tokens: 500
+          max_tokens: 500,
+          response_format: {
+            type: "json_object"
+          },
+          enable_thinking: false
         })
       }
     );
@@ -7827,9 +7830,7 @@ Return ONLY valid JSON.
     const data = JSON.parse(raw);
 
     const output =
-      data.output_text ||
-      data.output?.flatMap(i => i.content || [])
-        ?.find(p => p.type === "output_text")?.text ||
+      data.choices?.[0]?.message?.content ||
       '{"consolidated":[]}';
 
     let parsedOutput;
