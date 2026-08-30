@@ -2313,6 +2313,11 @@ Keep the answer short and useful.
 Never make medical claims.
 
 Speak directly to the user.
+
+Return ONLY valid JSON with this exact shape:
+{
+  "answer": "short visual answer"
+}
 `.trim();
 
     const userPrompt = `
@@ -2324,34 +2329,50 @@ Answer only what is visually relevant.
 Keep it natural and speak as Refleksa.
 `.trim();
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini",
-        input: [
-          {
-            role: "system",
-            content: [{ type: "input_text", text: systemPrompt }]
+    const qwenInspectVisionModel =
+      process.env.QWEN_INSPECT_VISION_MODEL ||
+      process.env.QWEN_KNOWLEDGE_VISION_MODEL ||
+      "qwen3.7-plus-2026-05-26";
+
+    const response = await fetch(
+      `https://${process.env.DASHSCOPE_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: qwenInspectVisionModel,
+          messages: [
+            {
+              role: "system",
+              content: systemPrompt
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: userPrompt
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: dataUrl
+                  }
+                }
+              ]
+            }
+          ],
+          max_tokens: 120,
+          response_format: {
+            type: "json_object"
           },
-          {
-            role: "user",
-            content: [
-              { type: "input_text", text: userPrompt },
-              {
-                type: "input_image",
-                image_url: dataUrl,
-                detail: "high"
-              }
-            ]
-          }
-        ],
-        max_output_tokens: 120
-      })
-    });
+          enable_thinking: false
+        })
+      }
+    );
 
     const rawText = await response.text();
 
@@ -2359,21 +2380,44 @@ Keep it natural and speak as Refleksa.
     try {
       data = JSON.parse(rawText);
     } catch {
-      console.error("VISION PARSE ERROR:", rawText);
+      console.error("VISION QWEN PARSE ERROR:", {
+        status: response.status
+      });
       return res.status(500).json({ error: "Vision parse error" });
     }
 
     if (!response.ok) {
-      console.error("VISION ERROR:", data);
+      console.error("VISION QWEN ERROR:", {
+        status: response.status,
+        requestId:
+          response.headers.get("x-request-id") ||
+          data?.request_id ||
+          null
+      });
       return res.status(response.status).json(data);
     }
 
-    const answer =
-      data.output_text ||
-      data.output?.flatMap(item => item.content || [])
-        ?.find(part => part.type === "output_text")
-        ?.text ||
+    const output =
+      data.choices?.[0]?.message?.content ||
       "";
+
+    let parsedOutput;
+    try {
+      parsedOutput = JSON.parse(output);
+    } catch {
+      console.error("VISION QWEN RESULT JSON ERROR:", {
+        requestId:
+          response.headers.get("x-request-id") ||
+          data?.request_id ||
+          null
+      });
+      return res.status(500).json({ error: "Vision parse error" });
+    }
+
+    const answer =
+      typeof parsedOutput?.answer === "string"
+        ? parsedOutput.answer
+        : "";
 
     if (!answer) {
       return res.status(500).json({ error: "Empty vision answer" });
