@@ -5893,7 +5893,6 @@ app.post(
       console.log("MEMORY REVEAL USED:", {
         device: req.prototypeDevice.deviceId,
         partner: req.prototypeDevice.partner,
-        personName: cleanPersonName || "unknown",
         targetLanguageCode: cleanLanguageCode,
         memoryCount: cleanMemories.length,
         time: new Date().toISOString()
@@ -6002,54 +6001,58 @@ Return ONLY valid JSON using exactly this structure:
 }
       `.trim();
 
+      const qwenMemoryModel =
+        process.env.QWEN_MEMORY_MODEL ||
+        process.env.QWEN_TEXT_MODEL ||
+        "qwen3.6-plus-2026-04-02";
+
       const response = await fetch(
-        "https://api.openai.com/v1/responses",
+        `https://${process.env.DASHSCOPE_WORKSPACE_ID}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions`,
         {
           method: "POST",
           headers: {
             Authorization:
-              `Bearer ${process.env.OPENAI_API_KEY}`,
+              `Bearer ${process.env.DASHSCOPE_API_KEY}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            model:
-              process.env.OPENAI_MEMORY_MODEL ||
-              "gpt-4.1-mini",
+            model: qwenMemoryModel,
 
-            input: [
+            messages: [
               {
                 role: "system",
-                content: [
-                  {
-                    type: "input_text",
-                    text: systemPrompt
-                  }
-                ]
+                content: systemPrompt
               },
               {
                 role: "user",
-                content: [
-                  {
-                    type: "input_text",
-                    text: JSON.stringify({
-                      personName:
-                        cleanPersonName || null,
-                      targetLanguageCode:
-                        cleanLanguageCode,
-                      memories:
-                        cleanMemories
-                    })
-                  }
-                ]
+                content: JSON.stringify({
+                  personName:
+                    cleanPersonName || null,
+                  targetLanguageCode:
+                    cleanLanguageCode,
+                  memories:
+                    cleanMemories
+                })
               }
             ],
 
-            max_output_tokens: 700
+            max_tokens: 700,
+            response_format: {
+              type: "json_object"
+            },
+            enable_thinking: false
           })
         }
       );
 
       const rawResponse = await response.text();
+
+      console.log("MEMORY REVEAL PROVIDER:", {
+        route: "/memory/reveal",
+        provider: "qwen",
+        model: qwenMemoryModel,
+        status: response.status
+      });
 
       let responseData;
 
@@ -6057,8 +6060,10 @@ Return ONLY valid JSON using exactly this structure:
         responseData = JSON.parse(rawResponse);
       } catch {
         console.error(
-          "MEMORY REVEAL OPENAI PARSE ERROR:",
-          rawResponse
+          "MEMORY REVEAL QWEN PARSE ERROR:",
+          {
+            status: response.status
+          }
         );
 
         return res.json({
@@ -6069,8 +6074,14 @@ Return ONLY valid JSON using exactly this structure:
 
       if (!response.ok) {
         console.error(
-          "MEMORY REVEAL OPENAI ERROR:",
-          responseData
+          "MEMORY REVEAL QWEN ERROR:",
+          {
+            status: response.status,
+            requestId:
+              response.headers.get("x-request-id") ||
+              responseData?.request_id ||
+              null
+          }
         );
 
         return res.json({
@@ -6080,11 +6091,7 @@ Return ONLY valid JSON using exactly this structure:
       }
 
       const outputText =
-        responseData.output_text ||
-        responseData.output
-          ?.flatMap(item => item.content || [])
-          ?.find(part => part.type === "output_text")
-          ?.text ||
+        responseData.choices?.[0]?.message?.content ||
         "";
 
       let parsed;
@@ -6093,8 +6100,13 @@ Return ONLY valid JSON using exactly this structure:
         parsed = JSON.parse(outputText);
       } catch {
         console.error(
-          "MEMORY REVEAL RESULT PARSE ERROR:",
-          outputText
+          "MEMORY REVEAL QWEN RESULT PARSE ERROR:",
+          {
+            requestId:
+              response.headers.get("x-request-id") ||
+              responseData?.request_id ||
+              null
+          }
         );
 
         return res.json({
@@ -6137,7 +6149,6 @@ Return ONLY valid JSON using exactly this structure:
       }
 
       console.log("MEMORY REVEAL SUCCESS:", {
-        personName: cleanPersonName || "unknown",
         targetLanguageCode: cleanLanguageCode,
         itemCount: items.length
       });
