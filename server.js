@@ -4,6 +4,10 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
+import {
+  createQalvyHospitalityTestHandler,
+  QALVY_HOSPITALITY_ROUTE,
+} from "./hospitality/qalvy-option-b.mjs";
 import jwt from "jsonwebtoken";
 import {
   toWords,
@@ -5332,6 +5336,16 @@ app.get("/time", requirePrototypeToken, (_req, res) => {
 // ===============================
 // MEMORY ANALYZER
 // ===============================
+app.post(
+  QALVY_HOSPITALITY_ROUTE,
+  requirePrototypeToken,
+  createQalvyHospitalityTestHandler({
+    env: process.env,
+    transport: fetch,
+    onPilotEvent: (record) => console.info(JSON.stringify({ event: "qalvy_room_101_pilot", ...record })),
+  })
+);
+
 app.post("/memory/analyze", requirePrototypeToken, async (req, res) => {
   const failClosed = (reason, details = {}) => {
     console.warn("MEMORY ANALYZE REJECTED:", {
