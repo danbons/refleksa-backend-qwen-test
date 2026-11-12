@@ -1,3 +1,5 @@
+import { createQalvyOptionAPrototype } from "./qalvy-option-a.mjs";
+
 export const QALVY_HOSPITALITY_ROUTE = "/hospitality/requests";
 const OPTION_B_PATH = "/qalvy/api/agents/v1/chat/completions";
 const MAX_TEXT_LENGTH = 1_000;
@@ -71,7 +73,7 @@ function encodeOptionB({ agentId, text, room, mirrorId, language, service }) {
     const towels = service.quantity === null ? "towels (quantity unspecified)" :
       (service.quantity === 1 ? "1 towel" : `${service.quantity} towels`);
     content += `\nQualified housekeeping action: ${action} ${towels}.` +
-      ` Use only this qualified action and write Mirror reply in language ${language}.`;
+      ` Use only this qualified action and end with one SAY: line in language ${language}.`;
   }
   return JSON.stringify({
     model: agentId,
@@ -80,27 +82,32 @@ function encodeOptionB({ agentId, text, room, mirrorId, language, service }) {
   });
 }
 
-// Only the written email layout is supported. "Mirror response:" is not
-// established as an API alias. No internal field is copied into speech.
-const EMAIL_FIELDS = ["Department: ", "Room: ", "Request: ", "Urgency: ", "Guest wording: "];
-function mirrorReply(content) {
-  if (typeof content !== "string" || content.length > 2_000) return null;
+// Only the final guest-facing line is eligible for speech. Earlier lines
+// can contain operational details and are never part of the returned text.
+function parseMirrorReply(content) {
+  if (typeof content !== "string") return { check: "CONTENT_TYPE" };
+  if (content.length > 2_000) return { check: "CONTENT_LENGTH" };
   const normalized = content.replace(/\r\n/g, "\n");
-  if (/[\x00-\x09\x0b-\x1f\x7f-\x9f\u2028\u2029]|\p{Cf}/u.test(normalized)) return null;
-  const lines = normalized.trim().split("\n");
-  if (lines.length !== 7 || lines[5] !== "" ||
-      !EMAIL_FIELDS.every((field, i) => lines[i].startsWith(field) &&
-        lines[i].slice(field.length).trim() && !/\bMirror (?:reply|response)\s*:/i.test(lines[i]))) {
-    return null;
+  if (/[\x00-\x09\x0b-\x1f\x7f-\x9f\u2028\u2029]|\p{Cf}|\p{Cs}/u.test(normalized)) {
+    return { check: "CONTENT_CONTROL_CHAR" };
   }
-  const match = /^Mirror reply: "([^"\r\n\u2028\u2029]+)"$/u.exec(lines[6]);
-  const reply = match?.[1].trim();
-  if (!reply ||
-      /\b(?:department|room|request|urgency|guest wording|mirror reply|mirror response)\s*:|[<>\x00-\x1f\x7f]|\p{Cf}/iu.test(reply)) return null;
-  // Keep the validated guest-facing outcome verbatim. Punctuation inside the
-  // phrase makes a safe single-phrase interpretation ambiguous in this pilot.
-  if (!/^[^.!?…。！？؟۔।॥։።]+[.!?。！？؟۔।॥։።]?$/u.test(reply) || !/\p{L}/u.test(reply)) return null;
-  return reply;
+  const lines = normalized.replace(/[ \n]+$/u, "").split("\n");
+  const sayLines = lines.filter((line) => /^\p{Zs}*SAY\p{Zs}*:/iu.test(line));
+  if (sayLines.length === 0) return { check: "REPLY_LABEL_MISSING" };
+  if (sayLines.length > 1) return { check: "REPLY_LABEL_DUPLICATE" };
+  const finalLine = lines.at(-1);
+  if (sayLines[0] !== finalLine) return { check: "REPLY_LABEL_NOT_FINAL" };
+  if (!finalLine.startsWith("SAY:")) return { check: "REPLY_LABEL_FORMAT" };
+  const reply = finalLine.slice("SAY:".length).trim();
+  if (!reply) return { check: "REPLY_EMPTY" };
+  if (/\b(?:department|room|request|urgency|guest wording|mirror reply|mirror response|say)\s*:|[<>\x60{}\[\]]/iu.test(reply) ||
+      /^(?:[#>*+-] +|\*\*|__)/u.test(reply)) {
+    return { check: "REPLY_UNSAFE_TEXT" };
+  }
+  // Preserve the guest-facing sentence without paraphrasing or truncation.
+  if (!/^[^.!?…。！？؟۔।॥։።]+[.!?。！？؟۔।॥։።]?$/u.test(reply)) return { check: "REPLY_SENTENCE" };
+  if (!/\p{L}/u.test(reply)) return { check: "REPLY_NO_LETTER" };
+  return { reply };
 }
 
 async function sendOnce({ transport, url, key, body, timeoutMs }) {
@@ -133,8 +140,10 @@ async function sendOnce({ transport, url, key, body, timeoutMs }) {
       }
       const data = await upstream.json();
       const content = Array.isArray(data?.choices) ? data.choices[0]?.message?.content : undefined;
-      const reply = mirrorReply(content);
-      return reply ? { reply } : { status: 200, reason: "MIRROR_REPLY_AMBIGUOUS" };
+      const parsed = parseMirrorReply(content);
+      return parsed.reply ? parsed : {
+        status: 200, reason: "MIRROR_REPLY_AMBIGUOUS", replyCheck: parsed.check,
+      };
     } catch {
       controller.abort();
       return { status: 502, reason: "UPSTREAM_INVALID_RESPONSE" };
@@ -149,8 +158,12 @@ async function sendOnce({ transport, url, key, body, timeoutMs }) {
 
 export function createQalvyHospitalityHandler({
   env, transport, resolveGuestContext, requireQualifiedService = false,
-  room101Pilot = false, onPilotEvent, timeoutMs = 5_000, maxClaimedTurns = MAX_CLAIMED_TURNS,
+  room101Pilot = false, onPilotEvent, onReplyRejected, optionA,
+  timeoutMs = 5_000, maxClaimedTurns = MAX_CLAIMED_TURNS,
 }) {
+  if (optionA && (!room101Pilot || !requireQualifiedService || typeof onPilotEvent !== "function")) {
+    throw new TypeError("Option A requires the audited, qualified room 101 pilot");
+  }
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
     throw new RangeError("Invalid Qalvy timeout");
   }
@@ -164,6 +177,8 @@ export function createQalvyHospitalityHandler({
   return async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     if (env.QALVY_OPTION_B_ENABLED !== "true") return review(res, 503, "OPTION_B_DISABLED");
+    if (optionA && env.QALVY_OPTION_A_ENABLED !== "true") return review(res, 503, "OPTION_A_DISABLED");
+    if (optionA && env.QALVY_OPTION_B_ROOM_101_PILOT !== "true") return review(res, 503, "ROOM_101_PILOT_DISABLED");
     if (typeof transport !== "function") return review(res, 503, "OPTION_B_TRANSPORT_UNAVAILABLE");
     const input = req.body;
     if (!input || typeof input !== "object" || Array.isArray(input) ||
@@ -208,12 +223,45 @@ export function createQalvyHospitalityHandler({
     } : null;
     if (pilotEvidence) {
       pilotClaimed = true;
-      if (!reportPilotEvent(onPilotEvent, { phase: "dispatch", ...pilotEvidence })) {
+      if (!reportPilotEvent(onPilotEvent, { phase: optionA ? "turn_claimed" : "dispatch", ...pilotEvidence })) {
+        return review(res, 503, "ROOM_101_PILOT_LOG_UNAVAILABLE");
+      }
+    }
+    if (optionA) {
+      const delivery = await optionA({
+        authenticatedDevice: req.prototypeDevice,
+        turnId: input.turnId,
+        occurredAt: Date.now(),
+        text: input.text,
+        language: input.language,
+      }, {
+        onAccepted: ({ operationId, idempotencyKey }) => onPilotEvent({
+          phase: "option_a_accepted", ...pilotEvidence, operationId, idempotencyKey,
+        }),
+        onStatusObserved: (shape) => onPilotEvent({
+          phase: "option_a_status", ...pilotEvidence, ...shape,
+        }),
+      });
+      if (!reportPilotEvent(onPilotEvent, {
+        phase: "option_a_result", ...pilotEvidence, outcome: delivery.status,
+        operationId: delivery.operationId, idempotencyKey: delivery.idempotencyKey,
+      })) return review(res, 503, "ROOM_101_PILOT_LOG_UNAVAILABLE");
+      if (delivery.status !== "succeeded") {
+        const status = {
+          idempotency_conflict: 409, timeout: 504, invalid_config: 503,
+          context_unavailable: 503, audit_unavailable: 503,
+        }[delivery.status] ?? 502;
+        return review(res, status, "OPTION_A_" + delivery.status.toUpperCase());
+      }
+      if (!reportPilotEvent(onPilotEvent, { phase: "option_b_dispatch", ...pilotEvidence })) {
         return review(res, 503, "ROOM_101_PILOT_LOG_UNAVAILABLE");
       }
     }
     const result = await sendOnce({ transport, url: config.url, key: config.key, body, timeoutMs });
-    if (pilotEvidence && !reportPilotEvent(onPilotEvent, {
+    if (result.replyCheck) {
+      // Emit only the check from the result that won the timeout race.
+      try { onReplyRejected?.(result.replyCheck); } catch { /* Keep the rejection. */ }
+    } else if (pilotEvidence && !reportPilotEvent(onPilotEvent, {
       phase: "result", ...pilotEvidence,
       routeStatus: result.reply ? 200 : result.status,
       outcome: result.reply ? "MIRROR_REPLY_VALIDATED" : result.reason,
@@ -227,21 +275,39 @@ export function createQalvyHospitalityHandler({
 }
 
 // The pilot binds one authenticated TEST device to its server-configured room.
-// No context supplied in the request can select a different room or mirror.
-export function createQalvyHospitalityTestHandler({ env, transport, onPilotEvent, timeoutMs }) {
+function resolveTestGuestContext(env, device) {
+  if (device.deviceId !== env.QALVY_OPTION_B_TEST_DEVICE_ID) return null;
+  return { room: env.QALVY_OPTION_B_TEST_ROOM, mirrorId: env.QALVY_OPTION_B_TEST_MIRROR_ID };
+}
+
+export function createQalvyHospitalityTestHandler({ env, transport, onPilotEvent, onReplyRejected, timeoutMs }) {
   return createQalvyHospitalityHandler({
     env,
     transport,
     onPilotEvent,
+    onReplyRejected,
     timeoutMs,
     requireQualifiedService: true,
     room101Pilot: env.QALVY_OPTION_B_ROOM_101_PILOT === "true",
+    resolveGuestContext: (device) => resolveTestGuestContext(env, device),
+  });
+}
+
+export function createQalvyRoom101HospitalityHandler({ env, transport, onPilotEvent, onReplyRejected }) {
+  const resolveGuestContext = (device) => resolveTestGuestContext(env, device);
+  const optionA = createQalvyOptionAPrototype({
+    env,
+    transport,
+    maxPolls: 7,
+    pollIntervalMs: 750,
     resolveGuestContext(device) {
-      if (device.deviceId !== env.QALVY_OPTION_B_TEST_DEVICE_ID) return null;
-      return {
-        room: env.QALVY_OPTION_B_TEST_ROOM,
-        mirrorId: env.QALVY_OPTION_B_TEST_MIRROR_ID,
-      };
+      const context = resolveGuestContext(device);
+      return context && { ...context, hotelId: env.QALVY_OPTION_A_TEST_HOTEL_ID };
     },
+  });
+  return createQalvyHospitalityHandler({
+    env, transport, onPilotEvent, onReplyRejected, resolveGuestContext, optionA,
+    requireQualifiedService: true,
+    room101Pilot: true,
   });
 }

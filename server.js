@@ -5,7 +5,7 @@ import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
 import {
-  createQalvyHospitalityTestHandler,
+  createQalvyRoom101HospitalityHandler,
   QALVY_HOSPITALITY_ROUTE,
 } from "./hospitality/qalvy-option-b.mjs";
 import jwt from "jsonwebtoken";
@@ -5339,10 +5339,11 @@ app.get("/time", requirePrototypeToken, (_req, res) => {
 app.post(
   QALVY_HOSPITALITY_ROUTE,
   requirePrototypeToken,
-  createQalvyHospitalityTestHandler({
+  createQalvyRoom101HospitalityHandler({
     env: process.env,
     transport: fetch,
     onPilotEvent: (record) => console.info(JSON.stringify({ event: "qalvy_room_101_pilot", ...record })),
+    onReplyRejected: (check) => console.info(check),
   })
 );
 
