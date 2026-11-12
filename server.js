@@ -54,7 +54,7 @@ app.post("/client-log", express.json({ limit: "1mb" }), (req, res) => {
 const GLOBAL_KILL_SWITCH = false;
 
 const prototypeDevices = [
-  { deviceId: "9640400020f1bae8", partner: "daniele", enabled: false, expiresAt: "2099-05-15T23:59:59Z" },
+  { deviceId: "9640400020f1bae8", partner: "daniele", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "be589d0c8eb5346f", partner: "daniele", enabled: false, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "58cc2f1b34e996b6", partner: "mirroh-ai", enabled: false, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "8f2d451cfa6ff7a2", partner: "mirroh-ai", enabled: false, expiresAt: "2099-05-15T23:59:59Z" },
