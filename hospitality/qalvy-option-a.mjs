@@ -7,6 +7,7 @@ const MAX_RESPONSE_BYTES = 32 * 1024;
 const OBSERVED_STATES = new Set(["pending", "leased", "dead", "succeeded"]);
 const SAFE_DEVICE_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 const SAFE_CONTEXT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
+const OPERATION_ID = /^trigger_[0-9a-fA-F]{64}$/u;
 const LANGUAGE = /^(?!und$|mul$|zxx$)[a-z]{2,3}$/u;
 const isVisibleAscii = (value, limit) =>
   typeof value === "string" && value.length > 0 && value.length <= limit && !/[^\x21-\x7e]/u.test(value);
@@ -51,7 +52,7 @@ function encodeEvent({ idempotencyKey, occurredAt, context, language, text, agen
 }
 
 function readOperationId(value) {
-  return typeof value === "string" && SAFE_CONTEXT_ID.test(value) && !/\s/u.test(value) ? value : null;
+  return typeof value === "string" && OPERATION_ID.test(value) ? value : null;
 }
 
 function readStatusLocation(location, operationId, url) {
@@ -133,7 +134,6 @@ async function deliver({
         });
         signal.throwIfAborted();
         if (response?.status !== 200) return { status: "status_unavailable", operationId };
-        // {id, status} is the simulated GET shape, pending live verification.
         let shape;
         try {
           shape = observeStatusShape(await response.json(), operationId);
@@ -146,7 +146,7 @@ async function deliver({
         } catch {
           return failure("audit_unavailable");
         }
-        if (shape.fieldCount !== 2 || !shape.idMatches || shape.statusType !== "string") {
+        if (!shape.idMatches || shape.statusType !== "string") {
           return failure("invalid_status");
         }
         switch (shape.observedStatus) {
