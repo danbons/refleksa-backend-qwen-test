@@ -66,7 +66,7 @@ const prototypeDevices = [
   { deviceId: "7d83688f63fde1da", partner: "danmirror", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "f5f802377bd3383c", partner: "daniele-tablet", enabled: false, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "9f906445f1ce5aa1", partner: "daniele-smartphone", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
-  { deviceId: "8673cd50cea7b6e9", partner: "mues-tec-thorsten", enabled: false, expiresAt: "2099-05-20T23:59:59Z" },
+  { deviceId: "3ff901de724304d2", partner: "roland", enabled: true, expiresAt: "2099-05-20T23:59:59Z" },
   { deviceId: "b47520c6faf88c7d", partner: "refleksa-hospitality-test", enabled: true, expiresAt: "2026-11-04T23:59:59Z" },
   ];
 
