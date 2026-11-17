@@ -59,6 +59,7 @@ const prototypeDevices = [
   { deviceId: "bbaddeb9c2b9e3d6", partner: "daniele_laptop", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "d045bddaa36ea992", partner: "MAMMA", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "58cc2f1b34e996b6", partner: "mirroh-ai", enabled: false, expiresAt: "2099-05-15T23:59:59Z" },
+  { deviceId: "4577c9adfab32bf3", partner: "mirroh-ai", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "8f2d451cfa6ff7a2", partner: "mirroh-ai", enabled: false, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "5d7c6ca446311c86", partner: "mirroh-ai", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "6ac02ed7bfe46453", partner: "mirroh-ai", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
