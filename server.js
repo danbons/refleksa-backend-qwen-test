@@ -66,6 +66,7 @@ const prototypeDevices = [
   { deviceId: "d7c449f94f671ccc", partner: "mirroh-ai", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "7d83688f63fde1da", partner: "danmirror", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "c497f1e691179013", partner: "cristiano", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
+  { deviceId: "4a90f73c54de3846", partner: "Samy_mirror", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "c0e3578e49c6709f", partner: "SAMY_LAVORO", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "666581f1d87fea4d", partner: "crina", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
   { deviceId: "be589d0c8eb5346f", partner: "daniele-tablet", enabled: true, expiresAt: "2099-05-15T23:59:59Z" },
